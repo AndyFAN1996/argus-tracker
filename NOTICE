@@ -1,0 +1,11 @@
+Argus Tracker
+
+This project contains code derived from OpenReplay Tracker:
+https://github.com/openreplay/openreplay/tree/main/tracker/tracker
+
+The original OpenReplay Tracker code is distributed under the MIT License.
+Its original copyright and license notice are preserved in the LICENSE file.
+
+Argus Tracker is an independent fork and is not affiliated with or endorsed
+by OpenReplay. Modifications are maintained at:
+https://github.com/AndyFAN1996/argus-tracker

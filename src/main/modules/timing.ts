@@ -1,0 +1,322 @@
+import type App from '../app/index.js'
+import { hasTag } from '../app/guards.js'
+import { isURL, getTimeOrigin } from '../utils.js'
+import { ResourceTiming, PageLoadTiming, PageRenderTiming, WebVitals } from '../app/messages.gen.js'
+import { onCLS, onINP, onLCP, onTTFB, Metric } from 'web-vitals'
+
+// Inspired by https://github.com/WPO-Foundation/RUM-SpeedIndex/blob/master/src/rum-speedindex.js
+
+interface ResourcesTimeMap {
+  [k: string]: number
+}
+
+interface PaintBlock {
+  time: number
+  area: number
+}
+
+function getPaintBlocks(resources: ResourcesTimeMap): Array<PaintBlock> {
+  const paintBlocks: Array<PaintBlock> = []
+  const elements = document.getElementsByTagName('*')
+  const styleURL = /url\(("[^"]*"|'[^']*'|[^)]*)\)/i
+  for (let i = 0; i < elements.length; i++) {
+    const element = elements[i]
+    let src = ''
+    if (hasTag(element, 'img')) {
+      src = element.currentSrc || element.src
+    }
+    if (!src) {
+      const backgroundImage = getComputedStyle(element).getPropertyValue('background-image')
+      if (backgroundImage) {
+        const matches = styleURL.exec(backgroundImage)
+        if (matches !== null) {
+          src = matches[1]
+          if (src.startsWith('"') || src.startsWith("'")) {
+            src = src.substr(1, src.length - 2)
+          }
+        }
+      }
+    }
+    if (!src) continue
+    const time = src.substr(0, 10) === 'data:image' ? 0 : resources[src]
+    if (time === undefined) continue
+    const rect = element.getBoundingClientRect()
+    const top = Math.max(rect.top, 0)
+    const left = Math.max(rect.left, 0)
+    const bottom = Math.min(
+      rect.bottom,
+      window.innerHeight ||
+        (document.documentElement && document.documentElement.clientHeight) ||
+        0,
+    )
+    const right = Math.min(
+      rect.right,
+      window.innerWidth || (document.documentElement && document.documentElement.clientWidth) || 0,
+    )
+    if (bottom <= top || right <= left) continue
+    const area = (bottom - top) * (right - left)
+    paintBlocks.push({ time, area })
+  }
+  return paintBlocks
+}
+
+function calculateSpeedIndex(firstContentfulPaint: number, paintBlocks: Array<PaintBlock>): number {
+  let a =
+    (Math.max(
+      (document.documentElement && document.documentElement.clientWidth) || 0,
+      window.innerWidth || 0,
+    ) *
+      Math.max(
+        (document.documentElement && document.documentElement.clientHeight) || 0,
+        window.innerHeight || 0,
+      )) /
+    10
+  let s = a * firstContentfulPaint
+  for (let i = 0; i < paintBlocks.length; i++) {
+    const { time, area } = paintBlocks[i]
+    a += area
+    s += area * (time > firstContentfulPaint ? time : firstContentfulPaint)
+  }
+  return a === 0 ? 0 : s / a
+}
+
+export interface Options {
+  captureResourceTimings: boolean
+  capturePageLoadTimings: boolean
+  capturePageRenderTimings: boolean
+  excludedResourceUrls?: Array<string>
+  resourceNameSanitizer?: (url: string) => string
+}
+
+export default function (app: App, opts: Partial<Options>): void {
+  const options: Options = Object.assign(
+    {
+      captureResourceTimings: true,
+      capturePageLoadTimings: true,
+      capturePageRenderTimings: true,
+      excludedResourceUrls: [],
+    },
+    opts,
+  )
+  if (!('PerformanceObserver' in window)) {
+    options.captureResourceTimings = false
+  }
+  if (!options.captureResourceTimings) {
+    return
+  } // Resources are necessary for all timings
+
+  let resources: ResourcesTimeMap | null = {}
+
+  function resourceTiming(entry: PerformanceResourceTiming): void {
+    if (entry.duration < 0 || !isURL(entry.name) || app.isServiceURL(entry.name)) return
+    if (resources !== null) {
+      resources[entry.name] = entry.startTime + entry.duration
+    }
+    let shouldSkip = false
+    options.excludedResourceUrls?.forEach((url) => {
+      if (entry.name.startsWith(url)) {
+        shouldSkip = true
+        return
+      }
+    })
+    if (shouldSkip) {
+      return
+    }
+
+    // will probably require custom header added to responses for tracked requests:
+    // Timing-Allow-Origin: *
+    // https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Timing-Allow-Origin
+    let stalled = 0
+    if (entry.connectEnd && entry.connectEnd > entry.domainLookupEnd) {
+      // Usual case stalled is time between connection establishment and request start
+      stalled = Math.max(0, entry.requestStart - entry.connectEnd)
+    } else {
+      // Connection reuse case - stalled is time between domain lookup and request start
+      stalled = Math.max(0, entry.requestStart - entry.domainLookupEnd)
+    }
+    const timings = {
+      queueing: entry.requestStart - entry.fetchStart,
+      dnsLookup: entry.domainLookupEnd - entry.domainLookupStart,
+      initialConnection: entry.connectEnd - entry.connectStart,
+      ssl: entry.secureConnectionStart > 0 ? entry.connectEnd - entry.secureConnectionStart : 0,
+      ttfb: entry.responseStart - entry.requestStart,
+      contentDownload: entry.responseEnd - entry.responseStart,
+      total: entry.duration ?? entry.responseEnd - entry.startTime,
+      stalled,
+    }
+    const entryName = options.resourceNameSanitizer
+      ? options.resourceNameSanitizer(entry.name)
+      : entry.name
+
+    const cached: boolean =
+      (entry.responseStatus && entry.responseStatus === 304) ||
+      // @ts-ignore
+      (entry.deliveryType && entry.deliveryType === 'cache') ||
+      (entry.transferSize === 0 && entry.decodedBodySize > 0)
+
+    const requestFailed = entry.responseStatus && entry.responseStatus >= 400
+    const decodedBodySize = requestFailed ? -111 : entry.decodedBodySize || 0
+    app.send(
+      ResourceTiming(
+        entry.startTime + getTimeOrigin(),
+        entry.duration,
+        timings.ttfb,
+        entry.transferSize > entry.encodedBodySize ? entry.transferSize - entry.encodedBodySize : 0,
+        entry.encodedBodySize || 0,
+        decodedBodySize,
+        app.sanitizer.privateMode ? entry.name.replaceAll(/./g, '*') : entryName,
+        entry.initiatorType,
+        entry.transferSize,
+        cached,
+        timings.queueing,
+        timings.dnsLookup,
+        timings.initialConnection,
+        timings.ssl,
+        timings.contentDownload,
+        timings.total,
+        timings.stalled,
+      ),
+    )
+  }
+
+  const observer = new PerformanceObserver((list) => list.getEntries().forEach(resourceTiming))
+
+  function onVitalsSignal<T extends Metric>(msg: T) {
+    if (app.active()) {
+      return app.send(WebVitals(msg.name, String(msg.value)))
+    }
+  }
+
+  let prevSessionID: string | undefined
+  app.attachStartCallback(function ({ sessionID }) {
+    if (sessionID !== prevSessionID) {
+      prevSessionID = sessionID
+    }
+    observer.observe({ type: 'resource', buffered: true })
+    // browser support:
+    // onCLS(): Chromium
+    // onFCP(): Chromium, Firefox, Safari
+    // onFID(): Chromium, Firefox (Deprecated)
+    // onINP(): Chromium
+    // onLCP(): Chromium, Firefox
+    // onTTFB(): Chromium, Firefox, Safari
+
+    onCLS(onVitalsSignal)
+    onINP(onVitalsSignal)
+    onLCP(onVitalsSignal)
+    onTTFB(onVitalsSignal)
+  })
+
+  app.attachStopCallback(function () {
+    observer.disconnect()
+  })
+
+  let firstPaint = 0,
+    firstContentfulPaint = 0
+
+  if (options.capturePageLoadTimings) {
+    let pageLoadTimingSent = false
+    app.ticker.attach(() => {
+      if (pageLoadTimingSent) {
+        return
+      }
+      if (firstPaint === 0 || firstContentfulPaint === 0) {
+        performance.getEntriesByType('paint').forEach((entry: PerformanceEntry) => {
+          const { name, startTime } = entry
+          switch (name) {
+            case 'first-paint':
+              firstPaint = startTime
+              break
+            case 'first-contentful-paint':
+              firstContentfulPaint = startTime
+              break
+          }
+        })
+      }
+      if (performance.timing.loadEventEnd || performance.now() > 30000) {
+        pageLoadTimingSent = true
+        const {
+          // should be ok to use here, (https://github.com/mdn/content/issues/4713)
+          // since it is compared with the values obtained on the page load (before any possible sleep state)
+          // deprecated though
+          navigationStart,
+          requestStart,
+          responseStart,
+          responseEnd,
+          domContentLoadedEventStart,
+          domContentLoadedEventEnd,
+          loadEventStart,
+          loadEventEnd,
+        } = performance.timing
+        app.send(
+          PageLoadTiming(
+            requestStart - navigationStart || 0,
+            responseStart - navigationStart || 0,
+            responseEnd - navigationStart || 0,
+            domContentLoadedEventStart - navigationStart || 0,
+            domContentLoadedEventEnd - navigationStart || 0,
+            loadEventStart - navigationStart || 0,
+            loadEventEnd - navigationStart || 0,
+            firstPaint,
+            firstContentfulPaint,
+          ),
+        )
+      }
+    }, 30)
+  }
+
+  if (options.capturePageRenderTimings) {
+    let visuallyComplete = 0,
+      interactiveWindowStartTime = 0,
+      interactiveWindowTickTime: number | null = 0,
+      paintBlocks: Array<PaintBlock> | null = null
+
+    let pageRenderTimingSent = false
+    app.ticker.attach(() => {
+      if (pageRenderTimingSent) {
+        return
+      }
+      const time = performance.now()
+      if (resources !== null) {
+        visuallyComplete = Math.max.apply(
+          null,
+          Object.keys(resources).map((k) => (resources as any)[k]),
+        )
+        if (time - visuallyComplete > 1000) {
+          paintBlocks = getPaintBlocks(resources)
+          resources = null
+        }
+      }
+      if (interactiveWindowTickTime !== null) {
+        if (time - interactiveWindowTickTime > 50) {
+          interactiveWindowStartTime = time
+        }
+        interactiveWindowTickTime = time - interactiveWindowStartTime > 5000 ? null : time
+      }
+      if ((paintBlocks !== null && interactiveWindowTickTime === null) || time > 30000) {
+        pageRenderTimingSent = true
+        resources = null
+        const speedIndex =
+          paintBlocks === null
+            ? 0
+            : calculateSpeedIndex(firstContentfulPaint || firstPaint, paintBlocks)
+        const { domContentLoadedEventEnd, navigationStart } = performance.timing
+        const timeToInteractive =
+          interactiveWindowTickTime === null
+            ? Math.max(
+                interactiveWindowStartTime,
+                firstContentfulPaint,
+                domContentLoadedEventEnd - navigationStart || 0,
+              )
+            : 0
+        app.send(
+          PageRenderTiming(
+            speedIndex,
+            firstContentfulPaint > visuallyComplete ? firstContentfulPaint : visuallyComplete,
+            timeToInteractive,
+          ),
+        )
+      }
+    })
+  }
+}

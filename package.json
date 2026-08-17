@@ -1,0 +1,113 @@
+{
+  "name": "argus-tracker",
+  "description": "A session replay and frontend observability tracker based on OpenReplay",
+  "version": "0.0.1",
+  "keywords": [
+    "analytics",
+    "error-tracking",
+    "logging",
+    "monitoring",
+    "session-replay",
+    "sourcemap"
+  ],
+  "author": {
+    "name": "AndyFAN1996",
+    "url": "https://github.com/AndyFAN1996"
+  },
+  "contributors": [
+    "Alex Tsokurov",
+    "Aleksandr K <alex@openreplay.com>",
+    "Nikita D <nikita@openreplay.com>"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AndyFAN1996/argus-tracker.git"
+  },
+  "homepage": "https://github.com/AndyFAN1996/argus-tracker#readme",
+  "bugs": {
+    "url": "https://github.com/AndyFAN1996/argus-tracker/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "type": "module",
+  "exports": {
+    ".": {
+      "require": "./dist/cjs/entry.js",
+      "import": "./dist/lib/entry.js",
+      "types": "./dist/lib/main/entry.d.ts"
+    },
+    "./class": {
+      "require": "./dist/cjs/index.js",
+      "import": "./dist/lib/index.js",
+      "types": "./dist/lib/main/index.d.ts"
+    },
+    "./cjs": {
+      "require": "./dist/cjs/entry.js",
+      "types": "./dist/cjs/main/entry.d.ts"
+    }
+  },
+  "files": [
+    "CHANGELOG.md",
+    "NOTICE",
+    "dist/lib/**/*",
+    "dist/cjs/**/*",
+    "bin/**/*"
+  ],
+  "bin": {
+    "argus-sourcemaps": "./bin/argus-sourcemaps.cjs"
+  },
+  "main": "./dist/cjs/entry.js",
+  "module": "./dist/lib/entry.js",
+  "types": "./dist/lib/main/entry.d.ts",
+  "scripts": {
+    "lint": "eslint src --ext .ts,.js --fix --quiet",
+    "clean": "rm -Rf build && rm -Rf dist",
+    "build:common": "tsc -b src/common",
+    "compile": "tsc --project src/main/tsconfig.json",
+    "create-types": "mkdir dist/lib/ dist/cjs && cp -r dist/types/* dist/lib/ && cp -r dist/types/* dist/cjs/",
+    "build": "npm run clean && npm run compile && npm run create-types && rollup --config rollup.config.js",
+    "test": "jest --coverage=false && node scripts/test-sourcemaps-cli.cjs",
+    "test:ci": "jest --coverage=true && node scripts/test-sourcemaps-cli.cjs",
+    "pack:check": "npm pack --dry-run",
+    "postversion": "npm run build",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run test"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.29.0",
+    "@jest/globals": "^29.7.0",
+    "@rollup/plugin-babel": "^6.1.0",
+    "@rollup/plugin-commonjs": "^29.0.0",
+    "@rollup/plugin-node-resolve": "^16.0.3",
+    "@rollup/plugin-replace": "^6.0.3",
+    "@rollup/plugin-terser": "0.4.4",
+    "@rollup/plugin-typescript": "^12.3.0",
+    "@typescript-eslint/eslint-plugin": "^8.54.0",
+    "@typescript-eslint/parser": "^8.54.0",
+    "eslint": "^9.39.2",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-prettier": "^5.5.5",
+    "jest": "^30.2.0",
+    "jest-environment-jsdom": "^30.2.0",
+    "prettier": "^3.8.1",
+    "replace-in-files": "^2.0.3",
+    "rollup": "^4.57.1",
+    "semver": "^6.3.0",
+    "ts-jest": "^29.4.6",
+    "tslib": "^2.8.1",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@openreplay/network-proxy": "^1.2.2",
+    "error-stack-parser": "^2.1.4",
+    "error-stack-parser-es": "^0.1.5",
+    "web-vitals": "^5.1.0"
+  },
+  "engines": {
+    "node": ">=14.0"
+  },
+  "packageManager": "bun@1.2.7"
+}

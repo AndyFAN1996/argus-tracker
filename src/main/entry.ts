@@ -1,0 +1,7 @@
+import TrackerClass from './index'
+
+export { default as App } from './app/index'
+export { default as tracker, default as openReplay } from './singleton'
+export { SanitizeLevel, Messages, Options, CaptureExceptionContext } from './index'
+export { default as Analytics } from './modules/analytics/index'
+export default TrackerClass
