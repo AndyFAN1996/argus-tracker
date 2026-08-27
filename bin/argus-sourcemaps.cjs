@@ -64,11 +64,13 @@ function findSourceMaps(directory) {
 
 function generatedFileFor(mapPath, root, data) {
   try {
-    const parsed = JSON.parse(data.toString('utf8'))
-    if (typeof parsed.file === 'string' && parsed.file.trim()) return parsed.file.trim()
+    JSON.parse(data.toString('utf8'))
   } catch (error) {
     throw new Error(`${mapPath} is not valid SourceMap JSON: ${error.message}`)
   }
+  // The map's `file` field is commonly only a basename (for example
+  // `index.js`). Argus needs the path relative to the common upload root to
+  // distinguish main/preload/renderer bundles with the same filename.
   return `/${path
     .relative(root, mapPath)
     .split(path.sep)

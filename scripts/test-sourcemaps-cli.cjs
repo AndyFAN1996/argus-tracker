@@ -10,7 +10,9 @@ const { main } = require('../bin/argus-sourcemaps.cjs')
 
 async function testUploadAndDelete() {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'argus-sourcemaps-'))
-  const mapPath = path.join(directory, 'app.js.map')
+  const mapDirectory = path.join(directory, 'main')
+  fs.mkdirSync(mapDirectory)
+  const mapPath = path.join(mapDirectory, 'app.js.map')
   fs.writeFileSync(
     mapPath,
     JSON.stringify({
@@ -54,7 +56,7 @@ async function testUploadAndDelete() {
     ])
     const requestText = requestBody.toString('latin1')
     assert(requestText.includes('release-123'))
-    assert(requestText.includes('assets/app.js'))
+    assert(requestText.includes('/main/app.js'))
     assert(requestText.includes('Content-Encoding: gzip'))
     const fileHeaderEnd = requestBody.indexOf(Buffer.from('Content-Encoding: gzip\r\n\r\n'))
     assert(fileHeaderEnd >= 0)
@@ -66,6 +68,7 @@ async function testUploadAndDelete() {
     assert.strictEqual(fs.existsSync(mapPath), false)
   } finally {
     await new Promise((resolve) => server.close(resolve))
+    fs.rmdirSync(mapDirectory)
     fs.rmdirSync(directory)
   }
 }

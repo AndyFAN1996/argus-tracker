@@ -1,3 +1,7 @@
+## 0.0.2
+
+- preserve the full upload-root-relative generated bundle path when uploading SourceMaps
+
 ## 17.2.2
 
 - improve unauth detection for sdk
