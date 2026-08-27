@@ -1,3 +1,7 @@
+## 0.0.3
+
+- allow trusted desktop hosts to report the embedded browser and actual host OS when starting a session
+
 ## 0.0.2
 
 - preserve the full upload-root-relative generated bundle path when uploading SourceMaps

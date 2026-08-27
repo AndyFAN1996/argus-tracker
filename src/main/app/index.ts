@@ -51,11 +51,24 @@ export interface StartOptions {
   sessionHash?: string
   assistOnly?: boolean
   /**
+   * Runtime information supplied by a trusted desktop host such as Electron
+   * Main. Regular browser integrations should omit this and let Argus parse
+   * the request User-Agent.
+   */
+  runtimeInfo?: StartRuntimeInfo
+  /**
    * @deprecated We strongly advise to use .start().then instead.
    *
    * This method is kept for snippet compatibility only
    * */
   startCallback?: (result: StartPromiseReturn) => void
+}
+
+export interface StartRuntimeInfo {
+  browser: string
+  browserVersion?: string
+  os: string
+  osVersion?: string
 }
 
 interface OnStartInfo {
@@ -1051,6 +1064,17 @@ export default class App {
     }
   }
 
+  private getRuntimeInfo(startOpts: StartOptions) {
+    const runtime = startOpts.runtimeInfo
+    if (!runtime) return {}
+    return {
+      userBrowser: runtime.browser,
+      userBrowserVersion: runtime.browserVersion,
+      userOS: runtime.os,
+      userOSVersion: runtime.osVersion,
+    }
+  }
+
   getSessionInfo() {
     return {
       ...this.session.getInfo(),
@@ -1207,6 +1231,7 @@ export default class App {
       },
       body: JSON.stringify({
         ...this.getTrackerInfo(),
+        ...this.getRuntimeInfo(startOpts),
         timestamp: now(),
         doNotRecord: true,
         bufferDiff: 0,
@@ -1256,6 +1281,7 @@ export default class App {
    * @param {Function} onSessionSent - callback that will be called once session is fully sent
    * */
   public offlineRecording(startOpts: StartOptions = {}, onSessionSent: () => void) {
+    this.prevOpts = startOpts
     this.onSessionSent = onSessionSent
     this.singleBuffer = true
     const isNewSession = this.checkSessionToken(startOpts.forceNew)
@@ -1348,6 +1374,7 @@ export default class App {
       },
       body: JSON.stringify({
         ...this.getTrackerInfo(),
+        ...this.getRuntimeInfo(this.prevOpts),
         timestamp: timestamp,
         doNotRecord: false,
         bufferDiff: timestamp - this.coldStartTs,
@@ -1469,6 +1496,7 @@ export default class App {
         },
         body: JSON.stringify({
           ...this.getTrackerInfo(),
+          ...this.getRuntimeInfo(startOpts),
           timestamp,
           doNotRecord: false,
           bufferDiff: timestamp - this.coldStartTs,
