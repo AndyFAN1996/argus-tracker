@@ -52,6 +52,28 @@ tracker.setUserID('my_user_id')
 tracker.setMetadata('env', 'prod')
 ```
 
+## Desktop runtime information
+
+Electron and other trusted desktop hosts can report the embedded browser and
+the actual host operating-system version when starting a session. Collect
+these values in the trusted Main process and pass them to the Renderer through
+a restricted preload bridge.
+
+```js
+tracker.start({
+  userID: 'my_user_id',
+  runtimeInfo: {
+    browser: 'Chromium',
+    browserVersion: desktopRuntime.chromiumVersion,
+    os: desktopRuntime.osName,
+    osVersion: desktopRuntime.osVersion,
+  },
+})
+```
+
+Regular browser integrations should omit `runtimeInfo`; Argus will continue to
+derive browser and system information from the HTTP `User-Agent`.
+
 ## React Error Boundary
 
 Use `captureException` in an Error Boundary to report handled React rendering
