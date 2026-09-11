@@ -1,7 +1,7 @@
 {
   "name": "argus-tracker",
   "description": "A session replay and frontend observability tracker based on OpenReplay",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "keywords": [
     "analytics",
     "error-tracking",
