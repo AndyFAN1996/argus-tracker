@@ -927,12 +927,7 @@ export default class App {
     this.emptyBatchCounter = 0
 
     try {
-      requestIdleCb(() => {
-        this.messages.unshift(Timestamp(this.timestamp()), TabData(this.session.getTabId()))
-        this.worker?.postMessage(this.messages)
-        this.commitCallbacks.forEach((cb) => cb(this.messages))
-        this.messages.length = 0
-      })
+      requestIdleCb(() => this.flushPendingMessages())
     } catch (e) {
       this._debug('worker_commit', e)
       this.stop(true)
@@ -971,6 +966,20 @@ export default class App {
   private postToWorker(messages: Array<Message>) {
     this.worker?.postMessage(messages)
     this.commitCallbacks.forEach((cb) => cb(messages))
+  }
+
+  private flushPendingMessages(): void {
+    if (
+      this.socketMode ||
+      this.insideIframe ||
+      this.worker === undefined ||
+      this.messages.length === 0
+    ) {
+      return
+    }
+    const messages = this.messages.splice(0)
+    messages.unshift(Timestamp(this.timestamp()), TabData(this.session.getTabId()))
+    this.postToWorker(messages)
   }
 
   private delay = 0
@@ -1774,6 +1783,10 @@ export default class App {
   }
 
   forceFlushBatch() {
+    // Deliver Renderer messages before asking the worker to finalise its
+    // current batch. postMessage calls from one sender are processed in order,
+    // so event() followed by forceFlushBatch() cannot flush an empty writer.
+    this.flushPendingMessages()
     this.worker?.postMessage('forceFlushBatch')
   }
 
