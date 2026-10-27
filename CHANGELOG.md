@@ -1,3 +1,8 @@
+## 0.0.6
+
+- add a public `resnapshot()` API for refreshing the recorded DOM snapshot
+- preserve iframe load listeners across resnapshots and remove them when no longer needed
+
 ## 0.0.5
 
 - fix detached DOM memory leaks caused by throttled node-data arguments being retained for the lifetime of the tracker

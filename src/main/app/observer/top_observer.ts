@@ -159,46 +159,51 @@ export default class TopObserver extends Observer {
   private iframeObserversArr: IFrameObserver[] = []
   private iframeObservers: WeakMap<HTMLIFrameElement | Document, IFrameObserver> = new WeakMap()
   private docObservers: WeakMap<Document, IFrameObserver> = new WeakMap()
+  private iframeLoadHandlers: Map<HTMLIFrameElement, () => void> = new Map()
   private handleIframe(iframe: HTMLIFrameElement): void {
     // setTimeout is required. Otherwise some event listeners (scroll, mousemove) applied in modules
     // do not work on the iframe document when it 've been loaded dynamically ((why?))
-    const handle = this.app.safe(() =>
-      setTimeout(() => {
-        const id = this.app.nodes.getID(iframe)
-        if (id === undefined || !canAccessIframe(iframe)) return
-        const currentWin = iframe.contentWindow
-        const currentDoc = iframe.contentDocument
-        if (!currentDoc) {
-          this.app.debug.warn('no doc for iframe found', iframe)
-          return
-        }
-        if (currentDoc && this.docObservers.has(currentDoc)) {
-          this.app.debug.info('doc already observed for', id)
-          return
-        }
-        const observer = new IFrameObserver(this.app, false, {})
-        this.iframeObservers.set(iframe, observer)
-        this.docObservers.set(currentDoc, observer)
-        this.iframeObserversArr.push(observer)
+    let handle = this.iframeLoadHandlers.get(iframe)
+    if (!handle) {
+      handle = this.app.safe(() =>
+        setTimeout(() => {
+          const id = this.app.nodes.getID(iframe)
+          if (id === undefined || !canAccessIframe(iframe)) return
+          const currentWin = iframe.contentWindow
+          const currentDoc = iframe.contentDocument
+          if (!currentDoc) {
+            this.app.debug.warn('no doc for iframe found', iframe)
+            return
+          }
+          if (currentDoc && this.docObservers.has(currentDoc)) {
+            this.app.debug.info('doc already observed for', id)
+            return
+          }
+          const observer = new IFrameObserver(this.app, false, {})
+          this.iframeObservers.set(iframe, observer)
+          this.docObservers.set(currentDoc, observer)
+          this.iframeObserversArr.push(observer)
 
-        observer.observe(iframe)
+          observer.observe(iframe)
 
-        this.iframeOffsets.observe(iframe)
-        if (
-          currentWin &&
-          // Sometimes currentWin.window is null (not in specification). Such window object is not functional
-          currentWin === currentWin.window &&
-          !this.contextsSet.has(currentWin) // for each context callbacks called once per Tracker (TopObserver) instance
-          //TODO: more explicit logic
-        ) {
-          this.contextsSet.add(currentWin)
-          // @ts-ignore https://github.com/microsoft/TypeScript/issues/41684
-          this.contextCallbacks.forEach((cb) => cb(currentWin))
-        }
-        // we need this delay because few iframes stacked one in another with rapid updates will break the player (or browser engine rather?)
-      }, 250),
-    )
-    iframe.addEventListener('load', handle)
+          this.iframeOffsets.observe(iframe)
+          if (
+            currentWin &&
+            // Sometimes currentWin.window is null (not in specification). Such window object is not functional
+            currentWin === currentWin.window &&
+            !this.contextsSet.has(currentWin) // for each context callbacks called once per Tracker (TopObserver) instance
+            //TODO: more explicit logic
+          ) {
+            this.contextsSet.add(currentWin)
+            // @ts-ignore https://github.com/microsoft/TypeScript/issues/41684
+            this.contextCallbacks.forEach((cb) => cb(currentWin))
+          }
+          // we need this delay because few iframes stacked one in another with rapid updates will break the player (or browser engine rather?)
+        }, 250),
+      )
+      this.iframeLoadHandlers.set(iframe, handle)
+      iframe.addEventListener('load', handle)
+    }
     handle()
   }
 
@@ -237,6 +242,11 @@ export default class TopObserver extends Observer {
     )
   }
 
+  resnapshot(): void {
+    this.disconnect(true)
+    this.observe()
+  }
+
   crossdomainObserve(rootNodeId: number, frameOder: number, frameLevel: number) {
     const observer = this
     Element.prototype.attachShadow = function () {
@@ -252,9 +262,15 @@ export default class TopObserver extends Observer {
     iframeObserver.syntheticObserve(rootNodeId, window.document)
   }
 
-  disconnect() {
+  disconnect(preserveIframeLoadHandlers = false) {
     this.iframeOffsets.clear()
     Element.prototype.attachShadow = attachShadowNativeFn
+    this.iframeLoadHandlers.forEach((handle, iframe) => {
+      if (!preserveIframeLoadHandlers || !iframe.isConnected) {
+        iframe.removeEventListener('load', handle)
+        this.iframeLoadHandlers.delete(iframe)
+      }
+    })
     this.iframeObserversArr.forEach((observer) => observer.disconnect())
     this.iframeObserversArr = []
     this.iframeObservers = new WeakMap()

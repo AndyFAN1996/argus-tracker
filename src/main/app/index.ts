@@ -1159,6 +1159,13 @@ export default class App {
     return this.activityState === ActivityState.Active
   }
 
+  resnapshot(): void {
+    if (!this.active() || this.options.crossdomain?.enabled) {
+      return
+    }
+    this.observer.resnapshot()
+  }
+
   resetNextPageSession(flag: boolean) {
     if (flag) {
       this.sessionStorage.setItem(this.options.session_reset_key, 't')
