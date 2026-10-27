@@ -49,10 +49,15 @@ describe('Constructor Tests', () => {
     delete global.IntersectionObserver;
   });
 
-  test('Takes options correctly', () => {
+  test('Takes options correctly and delegates DOM resnapshot', () => {
     const tracker = new Tracker(options as unknown as Options);
     expect(tracker.app.projectKey).toBe('test-project-key');
     expect(tracker.app.options.projectKey).toBe('test-project-key');
     expect(tracker.app.options.ingestPoint).toBe('test-ingest-point');
+    const resnapshot = jest.spyOn(tracker.app, 'resnapshot').mockImplementation(() => undefined);
+
+    tracker.resnapshot();
+
+    expect(resnapshot).toHaveBeenCalledTimes(1);
   })
 })

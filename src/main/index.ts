@@ -430,6 +430,13 @@ export default class API {
     this.app.forceFlushBatch()
   }
 
+  resnapshot() {
+    if (this.app === null) {
+      return
+    }
+    this.app.resnapshot()
+  }
+
   getSessionToken(): string | null | undefined {
     if (this.app === null) {
       return null

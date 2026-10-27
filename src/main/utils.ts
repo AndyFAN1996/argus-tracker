@@ -342,12 +342,15 @@ export function throttleWithTrailing<K, Args extends any[]>(
         timeouts.delete(key);
       }
       lastCalls.set(key, now);
+      // Args are consumed; do not retain DOM refs keyed by every node id.
+      lastArgs.delete(key);
       fn(key, ...args);
     } else if (!timeouts.has(key)) {
       const timeoutId = setTimeout(() => {
-        lastCalls.set(key, Date.now());
         timeouts.delete(key);
         const finalArgs = lastArgs.get(key)!;
+        lastArgs.delete(key);
+        lastCalls.delete(key);
         fn(key, ...finalArgs);
       }, remaining);
       timeouts.set(key, timeoutId);
